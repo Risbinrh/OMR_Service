@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  omr-service:
+    build: .
+    container_name: omr-service
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=false
+      - LOG_LEVEL=INFO
+      - JWT_SECRET=your-secret-key-change-this-in-production
+      - MAX_WORKERS=4
+      - PROCESSING_TIMEOUT=30
+      - CONFIDENCE_THRESHOLD=0.8
+    volumes:
+      - ./logs:/app/logs
+      - /tmp/omr_processing:/tmp/omr_processing
+    restart: unless-stopped
+    networks:
+      - omr-network
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          cpus: '1'
+          memory: 2G
+
+  # Optional Redis for batch processing
+  redis:
+    image: redis:7-alpine
+    container_name: omr-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - omr-network
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
+networks:
+  omr-network:
+    driver: bridge
+
+volumes:
+  redis-data:
