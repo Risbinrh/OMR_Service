@@ -10,8 +10,23 @@ Improvements:
 import cv2
 import numpy as np
 from pathlib import Path
-from ultralytics import YOLO
 import sys
+
+# Fix for DFLoss missing in newer ultralytics versions
+# Create a dummy DFLoss class to allow loading older trained models
+try:
+    from ultralytics.utils import loss
+    if not hasattr(loss, 'DFLoss'):
+        # Create dummy DFLoss class for backward compatibility
+        class DFLoss:
+            def __init__(self, *args, **kwargs):
+                pass
+        # Register it in the loss module
+        loss.DFLoss = DFLoss
+except Exception as e:
+    print(f"Warning: Could not patch DFLoss: {e}")
+
+from ultralytics import YOLO
 
 
 class MobileOMRPipelineV2:
