@@ -11,13 +11,11 @@ from datetime import datetime
 from pathlib import Path
 import shutil
 import json
-import sys
 
-# Add parent directory to path to import OMR pipeline
-sys.path.append(str(Path(__file__).parent.parent))
-from mobile_omr_pipeline_v2 import MobileOMRPipelineV2
+# Import OMR pipeline from app directory
+from app.mobile_omr_pipeline_v2 import MobileOMRPipelineV2
 
-from models import (
+from app.models import (
     ProcessResponse,
     GradeRequest,
     GradeResponse,
@@ -25,8 +23,8 @@ from models import (
     AnswerKeyCreate,
     GradingRules,
 )
-from grading import GradingEngine
-from storage import AnswerKeyStorage
+from app.grading import GradingEngine
+from app.storage import AnswerKeyStorage
 
 
 # Initialize FastAPI app
