@@ -6,7 +6,7 @@ uvicorn[standard]==0.27.0
 python-multipart==0.0.6
 
 # OMR Processing
-ultralytics==8.1.0
+ultralytics==8.0.196  # Older version that has DFLoss for our trained model
 opencv-python==4.9.0.80
 numpy==1.24.3
 Pillow==10.2.0
