@@ -25,6 +25,7 @@ from app.models import (
 )
 from app.grading import GradingEngine
 from app.storage import AnswerKeyStorage
+from app.config import settings
 
 
 # Initialize FastAPI app
@@ -37,22 +38,17 @@ app = FastAPI(
 # Enable CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Global variables
-MODEL_PATH = Path("../epoch20.pt")
-UPLOAD_DIR = Path("uploads")
-RESULTS_DIR = Path("results")
-ANSWER_KEYS_DIR = Path("answer_keys")
-
-# Create directories
-UPLOAD_DIR.mkdir(exist_ok=True)
-RESULTS_DIR.mkdir(exist_ok=True)
-ANSWER_KEYS_DIR.mkdir(exist_ok=True)
+# Use settings from config
+MODEL_PATH = settings.MODEL_PATH
+UPLOAD_DIR = settings.UPLOAD_DIR
+RESULTS_DIR = settings.RESULTS_DIR
+ANSWER_KEYS_DIR = settings.ANSWER_KEYS_DIR
 
 # Initialize OMR pipeline
 omr_pipeline = None
