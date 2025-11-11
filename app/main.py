@@ -25,7 +25,7 @@ from app.models import (
 )
 from app.grading import GradingEngine
 from app.storage import AnswerKeyStorage
-from app.config import settings
+from app.config import settings, cors_origins
 
 
 # Initialize FastAPI app
@@ -38,7 +38,7 @@ app = FastAPI(
 # Enable CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

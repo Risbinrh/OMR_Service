@@ -26,8 +26,8 @@ class Settings(BaseSettings):
     RESULTS_DIR: Path = BASE_DIR / "results"
     ANSWER_KEYS_DIR: Path = BASE_DIR / "answer_keys"
 
-    # CORS
-    CORS_ORIGINS: list = ["*"]
+    # CORS (can be comma-separated string or list)
+    CORS_ORIGINS: str = "*"
 
     # File uploads
     MAX_UPLOAD_SIZE: int = 10 * 1024 * 1024  # 10MB
@@ -39,6 +39,17 @@ class Settings(BaseSettings):
 
 # Create global settings instance
 settings = Settings()
+
+# Parse CORS origins (convert string to list)
+def get_cors_origins() -> list:
+    """Parse CORS_ORIGINS from string to list"""
+    if isinstance(settings.CORS_ORIGINS, str):
+        if settings.CORS_ORIGINS == "*":
+            return ["*"]
+        return [origin.strip() for origin in settings.CORS_ORIGINS.split(",")]
+    return settings.CORS_ORIGINS
+
+cors_origins = get_cors_origins()
 
 # Ensure directories exist
 settings.UPLOAD_DIR.mkdir(exist_ok=True)
