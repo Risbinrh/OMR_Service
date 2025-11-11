@@ -1,0 +1,19 @@
+# Render.com Deployment Configuration
+# https://render.com
+
+services:
+  - type: web
+    name: omr-microservice
+    env: docker
+    plan: starter  # Change to 'standard' or 'pro' for production
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: PORT
+        value: 8000
+      - key: DEBUG
+        value: false
+    healthCheckPath: /health
+    autoDeploy: true

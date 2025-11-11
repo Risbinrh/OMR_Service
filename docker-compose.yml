@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  omr-api:
+    build: .
+    container_name: omr-microservice
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./results:/app/results
+      - ./answer_keys:/app/answer_keys
+      - ../epoch20.pt:/app/epoch20.pt:ro
+      - ../mobile_omr_pipeline_v2.py:/app/mobile_omr_pipeline_v2.py:ro
+    environment:
+      - MODEL_PATH=/app/epoch20.pt
+      - UPLOAD_DIR=/app/uploads
+      - RESULTS_DIR=/app/results
+      - ANSWER_KEYS_DIR=/app/answer_keys
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
