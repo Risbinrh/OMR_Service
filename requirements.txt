@@ -10,6 +10,7 @@ ultralytics==8.1.0
 opencv-python==4.9.0.80
 numpy==1.24.3
 Pillow==10.2.0
+torch<2.6.0  # Pin torch to < 2.6 to avoid weights_only breaking change
 
 # Database (optional - for answer key storage)
 sqlalchemy==2.0.25
