@@ -8,7 +8,7 @@ import uuid
 from pathlib import Path
 from datetime import datetime
 from typing import List, Optional, Dict
-from models import AnswerKey, AnswerKeyCreate
+from app.models import AnswerKey, AnswerKeyCreate
 
 
 class AnswerKeyStorage:
