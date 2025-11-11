@@ -13,11 +13,10 @@ import shutil
 import json
 import sys
 
-# Add parent directory to path to import OMR pipeline
-sys.path.append(str(Path(__file__).parent.parent))
-from mobile_omr_pipeline_v2 import MobileOMRPipelineV2
+# Import OMR pipeline from app directory
+from app.mobile_omr_pipeline_v2 import MobileOMRPipelineV2
 
-from models import (
+from app.models import (
     ProcessResponse,
     GradeRequest,
     GradeResponse,
@@ -25,8 +24,9 @@ from models import (
     AnswerKeyCreate,
     GradingRules,
 )
-from grading import GradingEngine
-from storage import AnswerKeyStorage
+from app.grading import GradingEngine
+from app.storage import AnswerKeyStorage
+from app.config import settings, cors_origins
 
 
 # Initialize FastAPI app
@@ -39,22 +39,17 @@ app = FastAPI(
 # Enable CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Global variables
-MODEL_PATH = Path("../models/epoch20.pt")
-UPLOAD_DIR = Path("uploads")
-RESULTS_DIR = Path("results")
-ANSWER_KEYS_DIR = Path("answer_keys")
-
-# Create directories
-UPLOAD_DIR.mkdir(exist_ok=True)
-RESULTS_DIR.mkdir(exist_ok=True)
-ANSWER_KEYS_DIR.mkdir(exist_ok=True)
+# Use settings from config
+MODEL_PATH = settings.MODEL_PATH
+UPLOAD_DIR = settings.UPLOAD_DIR
+RESULTS_DIR = settings.RESULTS_DIR
+ANSWER_KEYS_DIR = settings.ANSWER_KEYS_DIR
 
 # Initialize OMR pipeline
 omr_pipeline = None

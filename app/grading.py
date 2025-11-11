@@ -3,7 +3,7 @@ Grading Engine for OMR Autograding
 """
 
 from typing import Dict, Optional
-from models import GradingRules
+from app.models import GradingRules
 
 
 class GradingEngine:
