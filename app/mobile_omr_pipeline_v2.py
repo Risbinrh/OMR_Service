@@ -10,8 +10,54 @@ Improvements:
 import cv2
 import numpy as np
 from pathlib import Path
-from ultralytics import YOLO
 import sys
+
+# ============================================================================
+# COMPATIBILITY PATCH FOR OLDER ULTRALYTICS MODELS
+# ============================================================================
+# Models trained with ultralytics 8.0.x may reference DFLoss class
+# that was removed in newer versions. This patch creates a dummy class
+# to allow loading older models.
+
+print("Applying DFLoss compatibility patch...")
+
+# Create dummy DFLoss class
+class DFLoss:
+    """Dummy DFLoss class for backward compatibility"""
+    def __init__(self, *args, **kwargs):
+        pass
+
+# Inject into ultralytics.utils.loss module before importing YOLO
+try:
+    # First, ensure the module is imported
+    import ultralytics.utils.loss as loss_module
+
+    # Add DFLoss to the module if it doesn't exist
+    if not hasattr(loss_module, 'DFLoss'):
+        loss_module.DFLoss = DFLoss
+        print(f"  ✓ DFLoss injected into ultralytics.utils.loss")
+    else:
+        print(f"  ✓ DFLoss already exists in ultralytics.utils.loss")
+
+    # Also register in sys.modules for pickle to find it
+    import sys as _sys
+    if 'ultralytics.utils.loss' in _sys.modules:
+        _sys.modules['ultralytics.utils.loss'].DFLoss = DFLoss
+        print(f"  ✓ DFLoss registered in sys.modules")
+
+except Exception as e:
+    print(f"  ⚠ Warning: DFLoss patch failed: {e}")
+    print(f"  Continuing anyway - model may fail to load if it uses DFLoss")
+
+print("Patch complete. Importing YOLO...")
+
+# Now import YOLO after the patch is applied
+from ultralytics import YOLO
+
+print("YOLO imported successfully!")
+print()
+
+# ============================================================================
 
 
 class MobileOMRPipelineV2:
