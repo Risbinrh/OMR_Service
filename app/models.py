@@ -19,6 +19,7 @@ class ProcessResponse(BaseModel):
     answers: Dict[int, str]  # Question number -> Answer (A/B/C/D)
     multiple_fills_details: List[Dict[str, Any]] = []
     detection_count: int
+    debug_image_url: Optional[str] = None  # URL to download debug visualization
 
 
 class GradingRules(BaseModel):
@@ -49,6 +50,7 @@ class GradeResponse(BaseModel):
     correct: int
     wrong: int
     unanswered: int
+    multiple_fills: int
     score: float
     max_score: float
     percentage: float

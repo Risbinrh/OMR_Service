@@ -11,11 +11,13 @@ from datetime import datetime
 from pathlib import Path
 import shutil
 import json
+import sys
 
-# Import OMR pipeline from app directory
-from app.mobile_omr_pipeline_v2 import MobileOMRPipelineV2
+# Add parent directory to path to import OMR pipeline
+sys.path.append(str(Path(__file__).parent.parent))
+from mobile_omr_pipeline_v2 import MobileOMRPipelineV2
 
-from app.models import (
+from models import (
     ProcessResponse,
     GradeRequest,
     GradeResponse,
@@ -23,9 +25,8 @@ from app.models import (
     AnswerKeyCreate,
     GradingRules,
 )
-from app.grading import GradingEngine
-from app.storage import AnswerKeyStorage
-from app.config import settings, cors_origins
+from grading import GradingEngine
+from storage import AnswerKeyStorage
 
 
 # Initialize FastAPI app
@@ -38,17 +39,22 @@ app = FastAPI(
 # Enable CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=cors_origins,
+    allow_origins=["*"],  # Configure appropriately for production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Use settings from config
-MODEL_PATH = settings.MODEL_PATH
-UPLOAD_DIR = settings.UPLOAD_DIR
-RESULTS_DIR = settings.RESULTS_DIR
-ANSWER_KEYS_DIR = settings.ANSWER_KEYS_DIR
+# Global variables
+MODEL_PATH = Path("../models/epoch20.pt")
+UPLOAD_DIR = Path("uploads")
+RESULTS_DIR = Path("results")
+ANSWER_KEYS_DIR = Path("answer_keys")
+
+# Create directories
+UPLOAD_DIR.mkdir(exist_ok=True)
+RESULTS_DIR.mkdir(exist_ok=True)
+ANSWER_KEYS_DIR.mkdir(exist_ok=True)
 
 # Initialize OMR pipeline
 omr_pipeline = None
@@ -78,6 +84,7 @@ async def root():
         "endpoints": {
             "docs": "/docs",
             "process": "/api/v1/process",
+            "quick_grade": "/api/v1/quick-grade",
             "grade": "/api/v1/grade",
             "answer_keys": "/api/v1/answer-keys",
         }
@@ -105,7 +112,7 @@ async def process_omr_sheet(
     - **file**: Image file of OMR sheet (mobile photo)
     - **save_debug**: Whether to save debug visualization images
 
-    Returns detected answers and processing metadata
+    Returns detected answers and processing metadata with debug image URL
     """
 
     # Validate file type
@@ -134,6 +141,13 @@ async def process_omr_sheet(
         extraction = results["extraction"]
         answers = extraction["answers"]
 
+        # Get debug image path if saved
+        debug_image_url = None
+        if save_debug and "debug_image" in results:
+            debug_image_path = results["debug_image"]
+            debug_filename = Path(debug_image_path).name
+            debug_image_url = f"/api/v1/download/debug/{debug_filename}"
+
         # Prepare response
         response = ProcessResponse(
             success=True,
@@ -146,6 +160,7 @@ async def process_omr_sheet(
             answers=answers,
             multiple_fills_details=extraction["multiple_fills"],
             detection_count=results["detection_count"],
+            debug_image_url=debug_image_url,
         )
 
         # Save results
@@ -203,6 +218,7 @@ async def grade_omr_sheet(
             student_answers=process_result.answers,
             answer_key=answer_key.answers,
             rules=rules,
+            multiple_fills=process_result.multiple_fills_details,
         )
 
         # Prepare response
@@ -217,6 +233,7 @@ async def grade_omr_sheet(
             correct=grade_result["correct"],
             wrong=grade_result["wrong"],
             unanswered=process_result.unanswered,
+            multiple_fills=grade_result["multiple_fills"],
             score=grade_result["score"],
             max_score=grade_result["max_score"],
             percentage=grade_result["percentage"],
@@ -288,19 +305,277 @@ async def delete_answer_key(answer_key_id: str):
         raise HTTPException(404, f"Answer key not found: {answer_key_id}")
 
 
-@app.post("/api/v1/batch-process")
-async def batch_process(files: List[UploadFile] = File(...)):
+@app.get("/api/v1/download/debug/{filename}")
+async def download_debug_image(filename: str):
     """
-    Process multiple OMR sheets in batch
+    Download debug visualization image
 
-    Returns list of processing results for each image
+    - **filename**: Name of the debug image file
+
+    Returns the debug image file for download
+    """
+    # Security: Only allow files from results directory
+    file_path = RESULTS_DIR / filename
+
+    if not file_path.exists():
+        raise HTTPException(404, f"Debug image not found: {filename}")
+
+    if not file_path.is_file():
+        raise HTTPException(400, "Invalid file path")
+
+    # Return file as downloadable
+    return FileResponse(
+        path=str(file_path),
+        media_type="image/jpeg",
+        filename=filename,
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
+
+@app.post("/api/v1/visualize")
+async def visualize_detection(
+    file: UploadFile = File(..., description="OMR sheet image (JPG/PNG)"),
+):
+    """
+    Visualize OMR bubble detection
+
+    Upload an OMR sheet image and get the detection visualization image back
+
+    - **file**: OMR sheet image
+
+    Returns: Detection visualization image (JPG) showing detected bubbles with bounding boxes
+    """
+
+    # Validate file type
+    if file.content_type and not file.content_type.startswith("image/"):
+        raise HTTPException(400, "File must be an image")
+
+    # Generate unique filename
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"{timestamp}_{file.filename}"
+    file_path = UPLOAD_DIR / filename
+
+    # Save uploaded file
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+    except Exception as e:
+        raise HTTPException(500, f"Failed to save file: {str(e)}")
+
+    # Process with OMR pipeline to get detection visualization
+    try:
+        results = omr_pipeline.process(str(file_path), save_debug=True)
+
+        if "error" in results:
+            raise HTTPException(400, results["error"])
+
+        # Get the debug image path
+        if "debug_image" not in results:
+            raise HTTPException(500, "Failed to generate detection visualization")
+
+        debug_image_path = Path(results["debug_image"])
+
+        if not debug_image_path.exists():
+            raise HTTPException(500, "Detection visualization not found")
+
+        # Return the detection visualization image directly
+        return FileResponse(
+            path=str(debug_image_path),
+            media_type="image/jpeg",
+            filename=f"detection_{file.filename}",
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Visualization failed: {str(e)}")
+
+
+@app.post("/api/v1/batch-visualize")
+async def batch_visualize_detection(
+    files: List[UploadFile] = File(..., description="Multiple OMR sheet images"),
+):
+    """
+    Visualize OMR bubble detection for multiple images
+
+    Upload multiple OMR sheet images and get their detection visualization URLs
+
+    - **files**: Multiple OMR sheet images
+
+    Returns: List of results with download URLs for each detection visualization image
     """
 
     results = []
 
     for file in files:
         try:
-            result = await process_omr_sheet(file, save_debug=False)
+            # Validate file type
+            if file.content_type and not file.content_type.startswith("image/"):
+                results.append({
+                    "filename": file.filename,
+                    "success": False,
+                    "error": "File must be an image"
+                })
+                continue
+
+            # Generate unique filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S%f")
+            filename = f"{timestamp}_{file.filename}"
+            file_path = UPLOAD_DIR / filename
+
+            # Save uploaded file
+            with open(file_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+
+            # Process with OMR pipeline
+            process_results = omr_pipeline.process(str(file_path), save_debug=True)
+
+            if "error" in process_results:
+                results.append({
+                    "filename": file.filename,
+                    "success": False,
+                    "error": process_results["error"]
+                })
+                continue
+
+            # Get debug image URL
+            if "debug_image" in process_results:
+                debug_image_path = Path(process_results["debug_image"])
+                debug_filename = debug_image_path.name
+                visualization_url = f"/api/v1/download/debug/{debug_filename}"
+
+                results.append({
+                    "filename": file.filename,
+                    "success": True,
+                    "visualization_url": visualization_url,
+                    "download_url": f"http://localhost:8000{visualization_url}"
+                })
+            else:
+                results.append({
+                    "filename": file.filename,
+                    "success": False,
+                    "error": "Failed to generate visualization"
+                })
+
+        except Exception as e:
+            results.append({
+                "filename": file.filename,
+                "success": False,
+                "error": str(e)
+            })
+
+    return {
+        "total": len(files),
+        "successful": sum(1 for r in results if r["success"]),
+        "failed": sum(1 for r in results if not r["success"]),
+        "results": results
+    }
+
+
+@app.post("/api/v1/quick-grade", response_model=GradeResponse)
+async def quick_grade(
+    file: UploadFile = File(..., description="OMR sheet image"),
+    answer_key: str = Form(..., description="Answer key as JSON string (e.g., {'1': 'A', '2': 'B', ...})"),
+):
+    """
+    Process OMR sheet and grade with answer key provided directly
+
+    Simple grading: 1 mark per correct answer, no negative marks
+
+    - **file**: OMR sheet image (JPG/PNG)
+    - **answer_key**: Answer key as JSON string, e.g., {"1": "A", "2": "B", "3": "C", ...}
+
+    Returns grading results with score and detailed comparison
+    """
+
+    # Parse answer key JSON
+    try:
+        answer_key_dict = json.loads(answer_key)
+        # Convert keys to integers
+        answer_key_dict = {int(k): v for k, v in answer_key_dict.items()}
+    except Exception as e:
+        raise HTTPException(400, f"Invalid answer key format. Expected JSON string: {str(e)}")
+
+    # Validate answer key
+    for q_num, answer in answer_key_dict.items():
+        if q_num < 1 or q_num > 100:
+            raise HTTPException(400, f"Invalid question number: {q_num}")
+        if answer not in ["A", "B", "C", "D"]:
+            raise HTTPException(400, f"Invalid answer for Q{q_num}: {answer}")
+
+    # Process the OMR sheet
+    process_result = await process_omr_sheet(file, save_debug=True)
+
+    if not process_result.success:
+        raise HTTPException(400, "Failed to process OMR sheet")
+
+    # Create grading rules: 1 mark per correct, no negative marks
+    rules = GradingRules(
+        correct_marks=1.0,
+        wrong_marks=0.0,
+        unanswered_marks=0.0,
+    )
+
+    # Grade the sheet
+    try:
+        grade_result = grading_engine.grade(
+            student_answers=process_result.answers,
+            answer_key=answer_key_dict,
+            rules=rules,
+            multiple_fills=process_result.multiple_fills_details,
+        )
+
+        # Prepare response
+        response = GradeResponse(
+            success=True,
+            image_filename=process_result.image_filename,
+            answer_key_id="direct_upload",
+            answer_key_name="Direct Upload",
+            graded_at=datetime.now().isoformat(),
+            total_questions=100,
+            answered=process_result.answered,
+            correct=grade_result["correct"],
+            wrong=grade_result["wrong"],
+            unanswered=process_result.unanswered,
+            multiple_fills=grade_result["multiple_fills"],
+            score=grade_result["score"],
+            max_score=grade_result["max_score"],
+            percentage=grade_result["percentage"],
+            grading_rules=rules,
+            detailed_results=grade_result["details"],
+        )
+
+        # Save grading results
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        result_file = RESULTS_DIR / f"{timestamp}_quick_grading_result.json"
+        with open(result_file, "w") as f:
+            json.dump(response.dict(), f, indent=2)
+
+        return response
+
+    except Exception as e:
+        raise HTTPException(500, f"Grading failed: {str(e)}")
+
+
+@app.post("/api/v1/batch-process")
+async def batch_process(
+    files: List[UploadFile] = File(...),
+    save_debug: bool = Form(True, description="Save debug visualization images"),
+):
+    """
+    Process multiple OMR sheets in batch
+
+    - **files**: Multiple OMR sheet images
+    - **save_debug**: Whether to save debug visualization images for each sheet
+
+    Returns list of processing results for each image with debug image URLs
+    """
+
+    results = []
+
+    for file in files:
+        try:
+            result = await process_omr_sheet(file, save_debug=save_debug)
             results.append({
                 "filename": file.filename,
                 "success": True,
@@ -317,6 +592,98 @@ async def batch_process(files: List[UploadFile] = File(...)):
         "total": len(files),
         "successful": sum(1 for r in results if r["success"]),
         "failed": sum(1 for r in results if not r["success"]),
+        "results": results,
+    }
+
+
+@app.post("/api/v1/batch-quick-grade")
+async def batch_quick_grade(
+    files: List[UploadFile] = File(...),
+    answer_key: str = Form(..., description="Answer key as JSON string"),
+):
+    """
+    Grade multiple OMR sheets in batch with answer key provided directly
+
+    Simple grading: 1 mark per correct answer, no negative marks
+
+    - **files**: Multiple OMR sheet images
+    - **answer_key**: Answer key as JSON string, e.g., {"1": "A", "2": "B", ...}
+
+    Returns grading results for each sheet with statistics
+    """
+
+    # Parse answer key JSON once (same key for all sheets)
+    try:
+        answer_key_dict = json.loads(answer_key)
+        answer_key_dict = {int(k): v for k, v in answer_key_dict.items()}
+    except Exception as e:
+        raise HTTPException(400, f"Invalid answer key format: {str(e)}")
+
+    # Validate answer key
+    for q_num, answer in answer_key_dict.items():
+        if q_num < 1 or q_num > 100:
+            raise HTTPException(400, f"Invalid question number: {q_num}")
+        if answer not in ["A", "B", "C", "D"]:
+            raise HTTPException(400, f"Invalid answer for Q{q_num}: {answer}")
+
+    results = []
+
+    for file in files:
+        try:
+            # Process the OMR sheet
+            process_result = await process_omr_sheet(file, save_debug=False)
+
+            if not process_result.success:
+                raise Exception("Failed to process OMR sheet")
+
+            # Grade with simple rules
+            rules = GradingRules(correct_marks=1.0, wrong_marks=0.0, unanswered_marks=0.0)
+
+            grade_result = grading_engine.grade(
+                student_answers=process_result.answers,
+                answer_key=answer_key_dict,
+                rules=rules,
+                multiple_fills=process_result.multiple_fills_details,
+            )
+
+            results.append({
+                "filename": file.filename,
+                "success": True,
+                "score": grade_result["score"],
+                "percentage": grade_result["percentage"],
+                "correct": grade_result["correct"],
+                "wrong": grade_result["wrong"],
+                "unanswered": grade_result["unanswered"],
+                "multiple_fills": grade_result["multiple_fills"],
+            })
+        except Exception as e:
+            results.append({
+                "filename": file.filename,
+                "success": False,
+                "error": str(e),
+            })
+
+    # Calculate statistics
+    successful_results = [r for r in results if r["success"]]
+
+    statistics = {}
+    if successful_results:
+        scores = [r["score"] for r in successful_results]
+        percentages = [r["percentage"] for r in successful_results]
+
+        statistics = {
+            "total_graded": len(successful_results),
+            "average_score": round(sum(scores) / len(scores), 2),
+            "average_percentage": round(sum(percentages) / len(percentages), 2),
+            "highest_score": max(scores),
+            "lowest_score": min(scores),
+        }
+
+    return {
+        "total": len(files),
+        "successful": len(successful_results),
+        "failed": len(results) - len(successful_results),
+        "statistics": statistics,
         "results": results,
     }
 

@@ -10,23 +10,8 @@ Improvements:
 import cv2
 import numpy as np
 from pathlib import Path
-import sys
-
-# Fix for DFLoss missing in newer ultralytics versions
-# Create a dummy DFLoss class to allow loading older trained models
-try:
-    from ultralytics.utils import loss
-    if not hasattr(loss, 'DFLoss'):
-        # Create dummy DFLoss class for backward compatibility
-        class DFLoss:
-            def __init__(self, *args, **kwargs):
-                pass
-        # Register it in the loss module
-        loss.DFLoss = DFLoss
-except Exception as e:
-    print(f"Warning: Could not patch DFLoss: {e}")
-
 from ultralytics import YOLO
+import sys
 
 
 class MobileOMRPipelineV2:
@@ -355,8 +340,8 @@ class MobileOMRPipelineV2:
         print(f"Image loaded: {w}x{h}")
         print()
 
-        # Create output directory
-        output_dir = Path('mobile_omr_results')
+        # Create output directory (use results directory for API)
+        output_dir = Path('results')
         output_dir.mkdir(exist_ok=True)
 
         base_name = Path(image_path).stem
@@ -399,6 +384,10 @@ class MobileOMRPipelineV2:
             'extraction': extraction_result,
             'output_dir': str(output_dir)
         }
+
+        # Add debug image path if saved
+        if save_debug:
+            results['debug_image'] = str(output_dir / f"{base_name}_3_detections.jpg")
 
         return results
 

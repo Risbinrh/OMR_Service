@@ -3,7 +3,7 @@ Grading Engine for OMR Autograding
 """
 
 from typing import Dict, Optional
-from app.models import GradingRules
+from models import GradingRules
 
 
 class GradingEngine:
@@ -14,6 +14,7 @@ class GradingEngine:
         student_answers: Dict[int, str],
         answer_key: Dict[int, str],
         rules: GradingRules,
+        multiple_fills: Optional[list] = None,
     ) -> Dict:
         """
         Grade student answers against answer key
@@ -22,6 +23,7 @@ class GradingEngine:
             student_answers: Dictionary of question -> answer
             answer_key: Dictionary of question -> correct answer
             rules: Grading rules (marks for correct/wrong/unanswered)
+            multiple_fills: List of question numbers with multiple fills (treated as wrong)
 
         Returns:
             Dictionary with grading results
@@ -30,28 +32,45 @@ class GradingEngine:
         correct_count = 0
         wrong_count = 0
         unanswered_count = 0
+        multiple_fills_count = 0
         total_score = 0.0
         detailed_results = []
+
+        # Create set of questions with multiple fills for quick lookup
+        multiple_fill_questions = set()
+        if multiple_fills:
+            multiple_fill_questions = {q["question"] for q in multiple_fills}
 
         # Iterate through all questions in answer key
         for question_num, correct_answer in answer_key.items():
             student_answer = student_answers.get(question_num)
 
-            if student_answer is None:
+            # Check if this question has multiple fills
+            if question_num in multiple_fill_questions:
+                # Multiple fills - always 0 marks
+                multiple_fills_count += 1
+                wrong_count += 1
+                marks_awarded = 0.0
+                is_correct = False
+                status = "multiple_fills"
+            elif student_answer is None:
                 # Unanswered
                 unanswered_count += 1
                 marks_awarded = rules.unanswered_marks
                 is_correct = False
+                status = "unanswered"
             elif student_answer == correct_answer:
                 # Correct
                 correct_count += 1
                 marks_awarded = rules.correct_marks
                 is_correct = True
+                status = "correct"
             else:
                 # Wrong
                 wrong_count += 1
                 marks_awarded = rules.wrong_marks
                 is_correct = False
+                status = "wrong"
 
             total_score += marks_awarded
 
@@ -60,6 +79,7 @@ class GradingEngine:
                 "student_answer": student_answer,
                 "correct_answer": correct_answer,
                 "is_correct": is_correct,
+                "status": status,
                 "marks_awarded": marks_awarded,
             })
 
@@ -73,6 +93,7 @@ class GradingEngine:
             "correct": correct_count,
             "wrong": wrong_count,
             "unanswered": unanswered_count,
+            "multiple_fills": multiple_fills_count,
             "score": round(total_score, 2),
             "max_score": max_score,
             "percentage": round(percentage, 2),
